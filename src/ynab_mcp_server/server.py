@@ -7,12 +7,13 @@ import re
 from typing import Any
 
 import httpx
-import yaml
 from fastmcp import FastMCP
 from fastmcp.server.providers.openapi import MCPType, OpenAPITool, RouteMap
 
+from ynab_mcp_server.payees import register_payee_tools
+from ynab_mcp_server.spec_cache import load_openapi_spec
+
 YNAB_API_BASE = "https://api.ynab.com/v1"
-YNAB_OPENAPI_SPEC_URL = "https://api.ynab.com/papi/open_api_spec.yaml"
 
 WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -20,7 +21,8 @@ WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 _PLAN = r"/(?:budgets|plans)/\{(?:budget|plan)_id\}"
 _PLAN_REQUEST = r"/(?:budgets|plans)/[^/]+"
 
-# Routes to exclude from the MCP server (these return too much data and bomb the context)
+# Routes to exclude from the MCP server (these return too much data and bomb the context).
+# searchPayees replaces the full payee list.
 EXCLUDED_ROUTES = [
     RouteMap(
         methods=["GET"],
@@ -148,13 +150,15 @@ def build_server(
     )
 
     # Create MCP server from OpenAPI spec
-    return FastMCP.from_openapi(
+    server = FastMCP.from_openapi(
         openapi_spec=openapi_spec,
         client=client,
         name="YNAB MCP Server",
         route_maps=route_maps,
         mcp_component_fn=_omit_openapi_output_schemas,
     )
+    register_payee_tools(server, client)
+    return server
 
 
 def create_server() -> FastMCP:
@@ -166,13 +170,8 @@ def create_server() -> FastMCP:
             "Get your personal access token from https://app.ynab.com/settings/developer"
         )
 
-    # Fetch the OpenAPI spec from YNAB
-    spec_response = httpx.get(YNAB_OPENAPI_SPEC_URL)
-    spec_response.raise_for_status()
-    openapi_spec = yaml.safe_load(spec_response.text)
-
     return build_server(
-        openapi_spec,
+        load_openapi_spec(),
         token,
         read_only=_env_flag("YNAB_READ_ONLY", default=False),
         allow_bulk_writes=_env_flag("YNAB_ALLOW_BULK_WRITES", default=False),

@@ -32,12 +32,15 @@ uv run pytest
 ├── README.md
 ├── tests/
 │   ├── smoke_test.py
+│   ├── test_caching.py
 │   └── test_write_modes.py
 ├── uv.lock
 └── src/
     └── ynab_mcp_server/
         ├── __init__.py
-        └── server.py
+        ├── payees.py
+        ├── server.py
+        └── spec_cache.py
 ```
 
 ## How It Works
@@ -45,11 +48,13 @@ uv run pytest
 This server uses FastMCP's `from_openapi()` method to automatically generate
 MCP tools from YNAB's OpenAPI specification. When the server starts, it:
 
-1. Fetches the YNAB OpenAPI spec from
-   `https://api.ynab.com/papi/open_api_spec.yaml`.
+1. Loads the YNAB OpenAPI spec from
+   `https://api.ynab.com/papi/open_api_spec.yaml`, using the copy cached by
+   `spec_cache.py` when it is less than 24 hours old.
 2. Parses the specification.
 3. Creates an authenticated HTTP client with your API token.
 4. Generates MCP tools for each API endpoint.
+5. Adds `searchPayees`, backed by the delta-synced cache in `payees.py`.
 
 ## Publishing
 

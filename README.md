@@ -118,6 +118,16 @@ claude mcp add ynab-reports --scope user \
   -- uvx ynab-mcp-tools
 ```
 
+## Caching
+
+- **OpenAPI spec:** the server builds its tools from YNAB's OpenAPI spec. It
+  keeps a copy in `~/.cache/ynab-mcp-server/` (or `$XDG_CACHE_HOME`, or
+  `YNAB_MCP_CACHE_DIR` if set), uses it for 24 hours, and falls back to the
+  stale copy if YNAB can't be reached.
+- **Payees:** `searchPayees` keeps payees in memory while the server runs. The
+  first search downloads them once; later searches fetch only what changed.
+  Payee data is never written to disk.
+
 ## Available Tools
 
 The server automatically exposes all YNAB API endpoints as MCP tools. Here are some of the available operations:
@@ -160,7 +170,7 @@ The server automatically exposes all YNAB API endpoints as MCP tools. Here are s
 
 ### Payees
 
-- `getPayees` - List all payees
+- `searchPayees` - Search payees by name, served from a cache (replaces listing every payee, which is too large)
 - `getPayeeById` - Get a single payee
 - `updatePayee` - Update a payee
 

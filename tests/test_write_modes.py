@@ -80,7 +80,7 @@ def test_bulk_writes_allowed():
 
 def test_read_only_hides_all_writes():
     tools = _tools(read_only=True, allow_bulk_writes=True)
-    assert set(tools) == {"getPlans", "getTransactions", "getTransactionById"}
+    assert set(tools) == {"getPlans", "getTransactions", "getTransactionById", "searchPayees"}
 
 
 def _check(guard, method, path, json=None):
