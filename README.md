@@ -98,6 +98,26 @@ Add the following to your OpenCode configuration file (`~/.config/opencode/openc
 }
 ```
 
+## Write Safety Settings
+
+Two environment variables control what the server may change in your budget.
+Set them next to `YNAB_API_TOKEN` in your MCP client config.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `YNAB_READ_ONLY` | `false` | `true` hides every create, update and delete tool and blocks all write requests. Use this for reporting and analytics. |
+| `YNAB_ALLOW_BULK_WRITES` | `false` | Bulk writes are off unless this is `true`. Off hides `updateTransactions` and `importTransactions`, removes the `transactions` array from `createTransaction` (one transaction at a time still works), and blocks those requests. |
+
+Blocked requests are refused before they reach YNAB, and the tool error tells the
+assistant which setting blocked it. For example, a read-only Claude Code setup:
+
+```bash
+claude mcp add ynab-reports --scope user \
+  -e "YNAB_API_TOKEN=your-token-here" \
+  -e "YNAB_READ_ONLY=true" \
+  -- uvx ynab-mcp-tools
+```
+
 ## Available Tools
 
 The server automatically exposes all YNAB API endpoints as MCP tools. Here are some of the available operations:

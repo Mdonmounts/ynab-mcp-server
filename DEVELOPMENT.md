@@ -16,6 +16,12 @@ Run the development checkout with:
 YNAB_API_TOKEN=your-token-here uv run ynab-mcp-server
 ```
 
+Run the tests with:
+
+```bash
+uv run pytest
+```
+
 ## Project Structure
 
 ```
@@ -25,7 +31,8 @@ YNAB_API_TOKEN=your-token-here uv run ynab-mcp-server
 ├── pyproject.toml
 ├── README.md
 ├── tests/
-│   └── smoke_test.py
+│   ├── smoke_test.py
+│   └── test_write_modes.py
 ├── uv.lock
 └── src/
     └── ynab_mcp_server/
