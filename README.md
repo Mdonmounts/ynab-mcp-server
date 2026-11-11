@@ -19,51 +19,27 @@ This server automatically exposes all YNAB API endpoints as MCP tools, allowing 
 4. Give your token a name and click **Generate**
 5. Copy the token (you won't be able to see it again!)
 
-## Add the Server to Your MCP Client
+## Run the Server
 
 The published package runs with `uvx ynab-mcp-tools`. `uvx` downloads it from
-PyPI and runs it in an isolated environment, so you do not need to clone this
-repository or manage a virtualenv.
+PyPI into an isolated environment, so you do not need to clone this repository
+or manage a virtualenv.
 
-### With Claude Desktop
+1. Install [uv](https://docs.astral.sh/uv/) (see Prerequisites).
+2. Set `YNAB_API_TOKEN` (see "Get Your YNAB API Token" above).
+3. Run `uvx ynab-mcp-tools`. The server speaks stdio: with the token set it
+   starts quietly and waits for an MCP client — press Ctrl+C to stop. Without
+   `YNAB_API_TOKEN` it exits immediately with an error naming the variable.
 
-Add the following to your Claude Desktop configuration file:
+From a source checkout instead:
 
-**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
-**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+1. `git clone https://github.com/Mdonmounts/ynab-mcp-server.git && cd ynab-mcp-server`
+2. `uv sync --locked`
+3. `YNAB_API_TOKEN=your-token-here uv run ynab-mcp-tools`
 
-```json
-{
-  "mcpServers": {
-    "ynab": {
-      "command": "uvx",
-      "args": ["ynab-mcp-tools"],
-      "env": {
-        "YNAB_API_TOKEN": "your-token-here"
-      }
-    }
-  }
-}
-```
+## Connect an Agent (MCP Client)
 
-### With Claude Code
-
-Use [Claude Code](https://code.claude.com/docs/en/mcp)'s MCP CLI. The `--`
-separates Claude's options from the server command.
-
-For all projects (**user** scope):
-
-```bash
-claude mcp add ynab --scope user \
-  -e "YNAB_API_TOKEN=your-token-here" \
-  -- uvx ynab-mcp-tools
-```
-
-For the current directory only, omit `--scope user` or use `--scope local`. Use `claude mcp list` to verify and `claude mcp remove ynab --scope user` (or `local`) to uninstall.
-
-### With Cursor
-
-Add the following to your Cursor MCP settings (`~/.cursor/mcp.json` for global or `.cursor/mcp.json` in your project):
+JSON-based clients share one server block:
 
 ```json
 {
@@ -79,24 +55,55 @@ Add the following to your Cursor MCP settings (`~/.cursor/mcp.json` for global o
 }
 ```
 
-### With OpenCode
+### Claude Desktop
 
-Add the following to your OpenCode configuration file (`~/.config/opencode/opencode.json`):
+1. Open `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
+2. Paste the shared server block above into `mcpServers`.
+3. Restart Claude Desktop.
 
-```json
-{
-  "mcp": {
-    "ynab": {
-      "type": "local",
-      "command": ["uvx", "ynab-mcp-tools"],
-      "enabled": true,
-      "environment": {
-        "YNAB_API_TOKEN": "your-token-here"
-      }
-    }
-  }
-}
-```
+### Claude Code
+
+1. Add the server for all projects (user scope) — the `--` separates Claude's options from the server command:
+   ```bash
+   claude mcp add ynab --scope user \
+     -e "YNAB_API_TOKEN=your-token-here" \
+     -- uvx ynab-mcp-tools
+   ```
+   For the current project only, use `--scope local` instead.
+2. Verify with `claude mcp list`. Uninstall with `claude mcp remove ynab --scope user` (or `local`).
+
+### Cursor
+
+1. Open `~/.cursor/mcp.json` (global) or `.cursor/mcp.json` in your project.
+2. Paste the shared server block above into `mcpServers`.
+
+### OpenCode
+
+1. Open `~/.config/opencode/opencode.json`.
+2. Add:
+   ```json
+   {
+     "mcp": {
+       "ynab": {
+         "type": "local",
+         "command": ["uvx", "ynab-mcp-tools"],
+         "enabled": true,
+         "environment": {
+           "YNAB_API_TOKEN": "your-token-here"
+         }
+       }
+     }
+   }
+   ```
+
+### Any other stdio client
+
+Point it at command `uvx` with args `["ynab-mcp-tools"]` and env `YNAB_API_TOKEN`.
+
+### Verify the connection
+
+1. Restart your client so it picks up the config.
+2. Ask it to run a read tool, e.g. "List my YNAB budgets" (`getBudgets`). A missing or invalid token fails at startup with a `YNAB_API_TOKEN` error.
 
 ## Write Safety Settings
 
@@ -196,6 +203,53 @@ Once connected, you can ask Claude things like:
 - "Create a transaction for $50 at the grocery store"
 - "How much have I spent on dining out this month?"
 
+## Automate a Task: Add a Custom Tool
+
+The OpenAPI tools cover raw CRUD. For a repeatable task — "find this month's
+uncategorized transactions", "flag anything over $500" — add one custom tool
+so any agent can run it by name. `src/ynab_mcp_server/payees.py`
+(`searchPayees`) is the reference implementation.
+
+1. Create `src/ynab_mcp_server/<task>.py` with a `register_<task>_tools(server, client)` function.
+2. Inside it, define an async function and expose it with `@server.tool(name="myTask", annotations={"readOnlyHint": True})`. The docstring becomes the tool description — state what it does and when to use it.
+3. Call YNAB through the shared `client` (already authenticated and write-guarded). Keep the response small: cap list sizes and drop fields the agent doesn't need.
+4. Register it in `build_server()` in `src/ynab_mcp_server/server.py`, right after `register_payee_tools(server, client)`.
+5. Add a test in `tests/` and run `uv run pytest`.
+6. Restart your client and ask for the task by name.
+
+Minimal example — list uncategorized transactions since a date:
+
+```python
+# src/ynab_mcp_server/review.py
+from typing import Any
+
+import httpx
+
+
+def register_review_tools(server: Any, client: httpx.AsyncClient) -> None:
+    @server.tool(name="uncategorizedSince", annotations={"readOnlyHint": True})
+    async def uncategorized_since(plan_id: str, since_date: str, limit: int = 50) -> dict[str, Any]:
+        """Uncategorized transactions in a plan since a date (YYYY-MM-DD), newest first.
+
+        `plan_id` is a plan (budget) id, or "last-used" / "default".
+        """
+        response = await client.get(
+            f"/plans/{plan_id}/transactions", params={"since_date": since_date}
+        )
+        response.raise_for_status()
+        uncategorized = [
+            t for t in response.json()["data"]["transactions"] if not t.get("category_id")
+        ]
+        return {"count": len(uncategorized), "transactions": uncategorized[:limit]}
+```
+
+Write safety applies automatically: when `YNAB_READ_ONLY=true` the HTTP guard
+in `server.py` blocks every write, including from custom tools. Mark
+annotations honestly (`readOnlyHint` for reads, `destructiveHint` for deletes).
+
+For conventions that need no code — "AMZN goes to Shopping unless the memo says
+Kindle" — encode them as a skill instead (next section).
+
 ## Creating Custom Skills for Your YNAB Workflow
 
 YNAB workflows are personal. Everyone has their own conventions for handling transactions, categorizing expenses, and managing duplicates. This repo includes a skill system that lets you encode your personal conventions so Claude can learn and apply them consistently.
@@ -247,7 +301,7 @@ Once created, your skills live in `.skills/` and Claude will automatically apply
 
 ## Resources
 
-- [Development Guide](https://github.com/rgarcia/ynab-mcp-server/blob/main/DEVELOPMENT.md)
+- [Development Guide](https://github.com/Mdonmounts/ynab-mcp-server/blob/main/DEVELOPMENT.md)
 - [YNAB API Documentation](https://api.ynab.com/)
 - [FastMCP Documentation](https://gofastmcp.com/)
 - [MCP Protocol Specification](https://modelcontextprotocol.io/)
