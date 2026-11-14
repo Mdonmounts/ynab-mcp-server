@@ -5,7 +5,7 @@
 Clone the repository and install its locked dependencies:
 
 ```bash
-git clone https://github.com/rgarcia/ynab-mcp-server.git
+git clone https://github.com/Mdonmounts/ynab-mcp-server.git
 cd ynab-mcp-server
 uv sync --locked
 ```
@@ -54,7 +54,19 @@ MCP tools from YNAB's OpenAPI specification. When the server starts, it:
 2. Parses the specification.
 3. Creates an authenticated HTTP client with your API token.
 4. Generates MCP tools for each API endpoint.
-5. Adds `searchPayees`, backed by the delta-synced cache in `payees.py`.
+5. Registers custom tools — `searchPayees` and any others added in
+   `build_server` — on top of the generated endpoints.
+
+## Adding a Custom Tool
+
+1. Create `src/ynab_mcp_server/<task>.py` with a `register_<task>_tools(server, client)`
+   function; expose an async function via `@server.tool(...)` (see `payees.py`).
+   The docstring is the tool description.
+2. Call it from `build_server()` in `server.py`, after `register_payee_tools(server, client)`.
+3. Use the shared authenticated `client`; keep responses small (cap lists, drop fields).
+4. Cover it with a test in `tests/` and run `uv run pytest`.
+
+See the README's "Automate a Task: Add a Custom Tool" section for a complete example.
 
 ## Publishing
 
